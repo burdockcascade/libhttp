@@ -1,3 +1,4 @@
+use std::hash::DefaultHasher;
 use std::sync::{Arc, Mutex};
 use async_std::io;
 use async_std::io::{BufReader, BufWriter};
@@ -5,27 +6,57 @@ use async_std::net::{TcpListener, TcpStream};
 use async_std::prelude::*;
 use async_std::task;
 use log::{debug, info, trace};
-use crate::http::{Header, HEADER_CONTENT_LENGTH, Method, Status};
+use crate::http::{CONNECTION_KEEP_ALIVE, Header, HEADER_CONNECTION, HEADER_CONTENT_LENGTH, HEADER_SERVER, Method, Status};
 use crate::message::{HttpRequest, HttpResponse};
+
+const DEFAULT_SERVER_NAME: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 pub trait HttpHandler: Send + Sync + 'static {
     fn handle(&mut self, request: &HttpRequest) -> HttpResponse;
 }
 
+#[derive(Clone)]
 pub struct HttpServer {
+    hostname: String,
+    port: u16,
+    default_headers: Vec<Header>,
     handler: Option<Arc<Mutex<dyn HttpHandler>>>,
 }
 
-impl HttpServer {
-    pub fn new() -> Self {
+impl Default for HttpServer {
+    fn default() -> Self {
         HttpServer {
+            hostname: "127.0.0.1".to_string(),
+            port: 80,
+            default_headers: vec![
+                Header::new(HEADER_SERVER, DEFAULT_SERVER_NAME),
+                Header::new(HEADER_CONNECTION, CONNECTION_KEEP_ALIVE),
+            ],
             handler: None,
         }
     }
+}
+
+impl HttpServer {
+    pub fn new(hostname: String, port: u16, default_headers: Vec<Header>, handler: Option<Arc<Mutex<dyn HttpHandler>>>) -> Self {
+        HttpServer {
+            hostname,
+            port,
+            handler,
+            default_headers
+        }
+    }
+
+    pub fn builder() -> HttpServerBuilder {
+        HttpServerBuilder::default()
+    }
 
     pub fn start(&self) -> io::Result<()> {
+
+        let address = format!("{}:{}", self.hostname, self.port);
+
         task::block_on(async {
-            let listener = TcpListener::bind("127.0.0.1:80").await?;
+            let listener = TcpListener::bind(address).await?;
             debug!("Listening on {}", listener.local_addr()?);
 
             let mut incoming = listener.incoming();
@@ -104,4 +135,48 @@ impl HttpServer {
 
         Ok(())
     }
+}
+
+pub struct HttpServerBuilder {
+    server: HttpServer,
+}
+
+impl Default for HttpServerBuilder {
+    fn default() -> Self {
+        HttpServerBuilder {
+            server: HttpServer::default(),
+        }
+    }
+}
+
+impl HttpServerBuilder {
+
+    pub fn hostname<H>(&mut self, hostname: H) -> &mut Self where H: Into<String>{
+        self.server.hostname = hostname.into();
+        self
+    }
+
+    pub fn port(&mut self, port: u16) -> &mut Self {
+        self.server.port = port;
+        self
+    }
+
+    pub fn default_headers(&mut self, default_headers: Vec<Header>) -> &mut Self {
+        self.server.default_headers = default_headers;
+        self
+    }
+
+    pub fn handler(&mut self, handler: Arc<Mutex<dyn HttpHandler>>) -> &mut Self {
+        self.server.handler = Some(handler);
+        self
+    }
+
+    pub fn build(&self) -> HttpServer {
+        self.server.clone()
+    }
+
+    pub fn start(&self) -> io::Result<()> {
+        self.server.start()
+    }
+
 }

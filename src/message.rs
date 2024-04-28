@@ -41,6 +41,15 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
+
+    pub fn builder() -> HttpResponseBuilder {
+        HttpResponseBuilder {
+            status: Some(Status::Ok),
+            headers: Vec::new(),
+            body: None,
+        }
+    }
+
     pub fn new(status: Status, headers: Vec<Header>, body: Option<Vec<u8>>) -> Self {
         
         let content_length = match &body {
@@ -86,3 +95,41 @@ impl HttpResponse {
         buffer
     }
 }
+
+pub struct HttpResponseBuilder {
+    status: Option<Status>,
+    headers: Vec<Header>,
+    body: Option<Vec<u8>>,
+}
+
+impl HttpResponseBuilder {
+
+    pub fn new() -> Self {
+        HttpResponseBuilder {
+            status: None,
+            headers: Vec::new(),
+            body: None,
+        }
+    }
+
+    pub fn status(&mut self, status: Status) -> &mut Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn header(&mut self, key: &str, value: &str) -> &mut Self {
+        self.headers.push(Header::new(key, value));
+        self
+    }
+
+    pub fn body(&mut self, body: Vec<u8>) -> &mut Self {
+        self.body = Some(body);
+        self
+    }
+
+    pub fn build(&self) -> HttpResponse {
+        HttpResponse::new(self.status.clone().unwrap_or(Status::Ok), self.headers.clone(), self.body.clone())
+    }
+
+}
+
